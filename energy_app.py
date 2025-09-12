@@ -5,12 +5,12 @@ import pandas as pd
 from datetime import timedelta
 import matplotlib.pyplot as plt
 
+
 class EnergyApp:
     def __init__(self, url):
         self.url = url
         self.download_path = 'combed.zip'
         self.extract_path = 'data'
-        self.csv_file = os.path.join(self.extract_path, 'combed.csv')
         self.df = None
 
     def download_and_extract(self):
@@ -28,12 +28,47 @@ class EnergyApp:
             zip_ref.extractall(self.extract_path)
         print('Extraction finished.')
 
+    def find_csv_files(self):
+        print('Searching for relevant CSV files...')
+        base_path = os.path.join(self.extract_path, 'iiitd', 'Lecture Block', 'AHU-1')
+        all_csv_files = []
+        for root, _, files in os.walk(base_path):
+            for file in files:
+                if file.endswith('.csv'):
+                    all_csv_files.append(os.path.join(root, file))
+        print(f'Found {len(all_csv_files)} CSV files under AHU-1')
+        return all_csv_files
+
     def load_and_process_data(self):
-        print('Loading and processing data...')
-        self.df = pd.read_csv(self.csv_file)
-        self.df['local_timestamp'] = pd.to_datetime(self.df['timestamp'], unit='s') + timedelta(hours=5, minutes=30)
-        self.df = self.df[self.df['node'] == 'Lecture Block\\AHU-1']
-        print(f'Filtered data rows: {len(self.df)}')
+        csv_files = self.find_csv_files()
+        data_frames = []
+
+        for file in csv_files:
+            # Properly read header-less CSV files
+            df = pd.read_csv(file, header=None, names=['ts', 'value'])
+
+            print(f"Columns in {os.path.basename(file)}: {list(df.columns)}")
+
+            column_type = os.path.basename(file).split('.')[0].lower()  # current/energy/power
+
+            # Rename column for clarity
+            df = df.rename(columns={'value': column_type})
+
+            # Convert timestamp from milliseconds to local datetime
+            df['ts'] = pd.to_datetime(df['ts'], unit='ms') + timedelta(hours=5, minutes=30)
+
+            data_frames.append(df[['ts', column_type]])
+
+        if not data_frames:
+            raise ValueError('No CSV data was processed.')
+
+        # Merge dataframes on timestamp
+        merged_df = data_frames[0]
+        for df in data_frames[1:]:
+            merged_df = pd.merge(merged_df, df, on='ts')
+
+        self.df = merged_df.rename(columns={'ts': 'local_timestamp'})
+        print(f'Processed data rows: {len(self.df)}')
         return self.df
 
     def visualize_data(self):
@@ -42,7 +77,7 @@ class EnergyApp:
         plt.plot(self.df['local_timestamp'], self.df['current'], label='Current (A)')
         plt.plot(self.df['local_timestamp'], self.df['power'], label='Power (kW)')
         plt.plot(self.df['local_timestamp'], self.df['energy'], label='Energy (kWh)')
-        plt.xlabel('Local Time')
+        plt.xlabel('Local Timestamp')
         plt.ylabel('Measurements')
         plt.title('Energy Data for Lecture Block\\AHU-1')
         plt.legend()
