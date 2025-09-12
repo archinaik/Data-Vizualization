@@ -1,101 +1,88 @@
-import requests
-import zipfile
+
+"""
+Energy consumption visualization for 'Lecture Block\\AHU-1'.
+Processes CSV data and plots Current, Energy, and Power curves.
+"""
+
 import os
 import pandas as pd
-from datetime import timedelta
+import numpy as np
 import matplotlib.pyplot as plt
 
-
 class EnergyApp:
-    def __init__(self, url):
-        self.url = url
-        self.download_path = 'combed.zip'
-        self.extract_path = 'data'
+    """Class to handle processing and visualizing energy data."""
+
+    def __init__(self, data_path="data/Lecture Block\\AHU-1"):
+        """
+        Initialize EnergyApp.
+
+        Args:
+            data_path (str): Folder containing CSV files for AHU-1.
+        """
+        self.data_path = data_path
         self.df = None
 
-    def download_and_extract(self):
-        print('Downloading data...')
-        response = requests.get(self.url)
-        response.raise_for_status()
-        with open(self.download_path, 'wb') as f:
-            f.write(response.content)
-        print('Download finished.')
+    def load_ahu1_data(self):
+        """Load all CSV files in the folder and merge into one DataFrame."""
+        if not os.path.exists(self.data_path):
+            raise FileNotFoundError(f"{self.data_path} does not exist")
 
-        print('Extracting files...')
-        if not os.path.exists(self.extract_path):
-            os.makedirs(self.extract_path)
-        with zipfile.ZipFile(self.download_path, 'r') as zip_ref:
-            zip_ref.extractall(self.extract_path)
-        print('Extraction finished.')
+        dfs = []
+        print("Searching for CSV files...")
+        for csv_file in os.listdir(self.data_path):
+            if csv_file.endswith(".csv"):
+                file_path = os.path.join(self.data_path, csv_file)
+                df = pd.read_csv(file_path)
+                type_name = csv_file.replace('.csv', '')
+                df = df.rename(columns={'value': type_name})
+                dfs.append(df)
+                print(f"Found {csv_file}, columns: {df.columns.tolist()}")
 
-    def find_csv_files(self):
-        print('Searching for relevant CSV files...')
-        base_path = os.path.join(self.extract_path, 'iiitd', 'Lecture Block', 'AHU-1')
-        all_csv_files = []
-        for root, _, files in os.walk(base_path):
-            for file in files:
-                if file.endswith('.csv'):
-                    all_csv_files.append(os.path.join(root, file))
-        print(f'Found {len(all_csv_files)} CSV files under AHU-1')
-        return all_csv_files
+        if not dfs:
+            raise ValueError("No CSV files found in the folder.")
 
-    def load_and_process_data(self):
-        csv_files = self.find_csv_files()
-        data_frames = []
-
-        for file in csv_files:
-            # Properly read header-less CSV files
-            df = pd.read_csv(file, header=None, names=['ts', 'value'])
-
-            print(f"Columns in {os.path.basename(file)}: {list(df.columns)}")
-
-            column_type = os.path.basename(file).split('.')[0].lower()  # current/energy/power
-
-            # Rename column for clarity
-            df = df.rename(columns={'value': column_type})
-
-            # Convert timestamp from milliseconds to local datetime
-            df['ts'] = pd.to_datetime(df['ts'], unit='ms') + timedelta(hours=5, minutes=30)
-
-            data_frames.append(df[['ts', column_type]])
-
-        if not data_frames:
-            raise ValueError('No CSV data was processed.')
-
-        # Merge dataframes on timestamp
-        merged_df = data_frames[0]
-        for df in data_frames[1:]:
+        # Merge all dataframes on timestamp
+        merged_df = dfs[0]
+        for df in dfs[1:]:
             merged_df = pd.merge(merged_df, df, on='ts')
+        self.df = merged_df
+        print(f"Processed data rows: {len(self.df)}")
 
-        self.df = merged_df.rename(columns={'ts': 'local_timestamp'})
-        print(f'Processed data rows: {len(self.df)}')
-        return self.df
+    def process_timestamps(self):
+        """Convert timestamp column to datetime and local time."""
+        if self.df is None:
+            raise ValueError("Data not loaded. Run load_ahu1_data() first.")
 
-    def visualize_data(self):
-        print('Plotting data...')
+        self.df['ts'] = pd.to_datetime(self.df['ts'])
+        self.df['ts_local'] = self.df['ts'] + pd.to_timedelta(5.5, unit='h')  # IST offset
+
+    def plot_data(self, save_path="energy_plot.jpeg"):
+        """Plot all energy-related columns and save to file."""
+        if self.df is None:
+            raise ValueError("Data not loaded. Run load_ahu1_data() first.")
+
         plt.figure(figsize=(12, 6))
-        plt.plot(self.df['local_timestamp'], self.df['current'], label='Current (A)')
-        plt.plot(self.df['local_timestamp'], self.df['power'], label='Power (kW)')
-        plt.plot(self.df['local_timestamp'], self.df['energy'], label='Energy (kWh)')
-        plt.xlabel('Local Timestamp')
-        plt.ylabel('Measurements')
-        plt.title('Energy Data for Lecture Block\\AHU-1')
+        # Plot all columns except timestamps
+        for col in self.df.columns:
+            if col not in ['ts', 'ts_local']:
+                plt.plot(self.df['ts_local'], self.df[col], label=col)
+
+        plt.xlabel("Time")
+        plt.ylabel("Value")
+        plt.title("AHU-1 Energy Consumption")
         plt.legend()
-        plt.xticks(rotation=45)
         plt.tight_layout()
-        plt.savefig('energy_plot.jpeg')
-        print('Plot saved as energy_plot.jpeg')
-        plt.close()
+        plt.savefig(save_path)
+        print(f"Plot saved as {save_path}")
 
 
 def main():
-    data_url = 'http://combed.github.io/downloads/combed.zip'
-    app = EnergyApp(data_url)
+    """Main function to run the EnergyApp."""
+    app = EnergyApp(data_path="data/Lecture Block\\AHU-1")  # Replace with your local CSV folder
+    app.load_ahu1_data()
+    app.process_timestamps()
+    app.plot_data()
 
-    app.download_and_extract()
-    app.load_and_process_data()
-    app.visualize_data()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
