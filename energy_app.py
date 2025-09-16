@@ -69,12 +69,24 @@ class EnergyApp:
         if not data_frames:
             raise ValueError('No CSV data was processed.')
 
-        # Merge all dataframes on timestamp
-        merged_df = data_frames[0]
-        for df in data_frames[1:]:
-            merged_df = pd.merge(merged_df, df, on='ts')
+        # # Merge all dataframes on timestamp
+        # merged_df = data_frames[0]
+        # for df in data_frames[1:]:
+        #     print(df.shape)
+        #     merged_df = pd.merge(merged_df, df, on='ts')
+
+
+        merged_df = pd.DataFrame()  # start with empty DataFrame
+
+        for df in data_frames:
+            print(df.shape)
+            if merged_df.empty:
+                merged_df = df.copy()   # first df becomes the base
+            else:
+                merged_df = pd.merge(merged_df, df, on='ts')
 
         self.df = merged_df.rename(columns={'ts': 'local_timestamp'})
+        print(merged_df.shape)
         print(f'Processed data rows: {len(self.df)}')
         return self.df
 
